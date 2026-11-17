@@ -1,0 +1,51 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.get('active', false) == true &&
+        firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.get('role', '') == 'admin';
+    }
+
+    function isValidReceiptFile(fileName) {
+      return fileName.matches('^receipt_[0-9]+\\.(jpg|jpeg|png|webp)$');
+    }
+
+    function isSafeImageUpload() {
+      return request.resource != null &&
+        request.resource.size > 0 &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType != null &&
+        request.resource.contentType.matches('^image/(jpeg|png|webp)$');
+    }
+
+    // Customer payment receipt uploads:
+    // - Tied to an existing Firestore order whose receiptPath matches this exact file path.
+    // - Allows only JPEG, PNG, and WebP images up to 5 MB.
+    // - Single-create only (resource == null prevents overwriting).
+    // - Only authorized admins can read uploaded receipts.
+    // - Public reading, listing, overwriting, and deleting are denied.
+    match /order-receipts/{orderDocId}/{fileName} {
+      allow create: if orderDocId.matches('^[a-zA-Z0-9_\\-]{1,128}$') &&
+        isValidReceiptFile(fileName) &&
+        resource == null &&
+        isSafeImageUpload() &&
+        firestore.exists(/databases/(default)/documents/orders/$(orderDocId)) &&
+        firestore.get(/databases/(default)/documents/orders/$(orderDocId)).data.receiptPath == ('order-receipts/' + orderDocId + '/' + fileName);
+
+      allow get: if isAdmin();
+      allow list, update, delete: if false;
+    }
+
+    // Default deny for all other Storage paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

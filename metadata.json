@@ -1,0 +1,6 @@
+{
+  "name": "Lumière Parfums - Luxury Fragrances",
+  "description": "Luxury fragrances, thoughtfully crafted with the finest ingredients from around the world. Explore our haute parfumerie collections, discovery sets, and gifting essentials.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

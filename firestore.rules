@@ -1,0 +1,200 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string &&
+        id.size() >= 1 &&
+        id.size() <= 128 &&
+        id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Authorized admin check via protected admins collection.
+    // Admin documents must only be created manually via Firebase Console or Admin SDK
+    // and must explicitly include active: true and role: "admin".
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('active', false) == true &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('role', '') == 'admin';
+    }
+
+    function isValidOrderItem(item) {
+      return item is map &&
+        item.keys().hasAll([
+          'productId',
+          'productName',
+          'quantity',
+          'selectedVolume',
+          'unitPrice',
+          'lineTotal'
+        ]) &&
+        item.keys().hasOnly([
+          'productId',
+          'productName',
+          'quantity',
+          'selectedVolume',
+          'unitPrice',
+          'lineTotal'
+        ]) &&
+        item.productId is string && item.productId.size() >= 1 && item.productId.size() <= 80 &&
+        item.productName is string && item.productName.size() >= 1 && item.productName.size() <= 120 &&
+        item.quantity is int && item.quantity >= 1 && item.quantity <= 50 &&
+        item.selectedVolume is string && item.selectedVolume.size() >= 1 && item.selectedVolume.size() <= 80 &&
+        (item.unitPrice is int || item.unitPrice is float) &&
+        item.unitPrice > 0 && item.unitPrice <= 100000 &&
+        (item.lineTotal is int || item.lineTotal is float) &&
+        item.lineTotal == item.unitPrice * item.quantity;
+    }
+
+    function hasMatchingSubtotal(items, subtotal) {
+      return (items.size() == 1 && subtotal == items[0].lineTotal) ||
+        (items.size() == 2 && subtotal == items[0].lineTotal + items[1].lineTotal) ||
+        (items.size() == 3 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal) ||
+        (items.size() == 4 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal + items[3].lineTotal) ||
+        (items.size() == 5 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal + items[3].lineTotal + items[4].lineTotal) ||
+        (items.size() == 6 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal + items[3].lineTotal + items[4].lineTotal + items[5].lineTotal) ||
+        (items.size() == 7 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal + items[3].lineTotal + items[4].lineTotal + items[5].lineTotal + items[6].lineTotal) ||
+        (items.size() == 8 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal + items[3].lineTotal + items[4].lineTotal + items[5].lineTotal + items[6].lineTotal + items[7].lineTotal) ||
+        (items.size() == 9 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal + items[3].lineTotal + items[4].lineTotal + items[5].lineTotal + items[6].lineTotal + items[7].lineTotal + items[8].lineTotal) ||
+        (items.size() == 10 && subtotal == items[0].lineTotal + items[1].lineTotal + items[2].lineTotal + items[3].lineTotal + items[4].lineTotal + items[5].lineTotal + items[6].lineTotal + items[7].lineTotal + items[8].lineTotal + items[9].lineTotal);
+    }
+
+    function isValidNewOrder(orderDocId, data) {
+      return data.keys().hasAll([
+          'orderId',
+          'customerName',
+          'phoneNumber',
+          'customerEmail',
+          'karachiArea',
+          'deliveryAddress',
+          'notes',
+          'items',
+          'subtotal',
+          'deliveryFee',
+          'grandTotal',
+          'currency',
+          'paymentMethod',
+          'transactionId',
+          'hasScreenshot',
+          'receiptPath',
+          'paymentStatus',
+          'orderStatus',
+          'adminNotes',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'orderId',
+          'customerName',
+          'phoneNumber',
+          'customerEmail',
+          'karachiArea',
+          'deliveryAddress',
+          'notes',
+          'items',
+          'subtotal',
+          'deliveryFee',
+          'grandTotal',
+          'currency',
+          'paymentMethod',
+          'transactionId',
+          'hasScreenshot',
+          'receiptPath',
+          'paymentStatus',
+          'orderStatus',
+          'adminNotes',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.orderId is string && data.orderId.matches('^ARS-[0-9]{6}$') &&
+        data.customerName is string && data.customerName.size() >= 2 && data.customerName.size() <= 100 &&
+        data.phoneNumber is string && data.phoneNumber.size() >= 10 && data.phoneNumber.size() <= 25 &&
+        data.customerEmail is string && data.customerEmail.size() <= 150 &&
+        data.karachiArea is string && data.karachiArea.size() >= 2 && data.karachiArea.size() <= 120 &&
+        data.deliveryAddress is string && data.deliveryAddress.size() >= 5 && data.deliveryAddress.size() <= 400 &&
+        data.notes is string && data.notes.size() <= 500 &&
+        data.items is list && data.items.size() >= 1 && data.items.size() <= 10 &&
+        isValidOrderItem(data.items[0]) &&
+        (data.items.size() < 2 || isValidOrderItem(data.items[1])) &&
+        (data.items.size() < 3 || isValidOrderItem(data.items[2])) &&
+        (data.items.size() < 4 || isValidOrderItem(data.items[3])) &&
+        (data.items.size() < 5 || isValidOrderItem(data.items[4])) &&
+        (data.items.size() < 6 || isValidOrderItem(data.items[5])) &&
+        (data.items.size() < 7 || isValidOrderItem(data.items[6])) &&
+        (data.items.size() < 8 || isValidOrderItem(data.items[7])) &&
+        (data.items.size() < 9 || isValidOrderItem(data.items[8])) &&
+        (data.items.size() < 10 || isValidOrderItem(data.items[9])) &&
+        (data.subtotal is int || data.subtotal is float) &&
+        data.subtotal > 0 && data.subtotal <= 1000000 &&
+        hasMatchingSubtotal(data.items, data.subtotal) &&
+        data.deliveryFee == 200 &&
+        (data.grandTotal is int || data.grandTotal is float) &&
+        data.grandTotal == data.subtotal + 200 &&
+        data.currency == 'PKR' &&
+        data.paymentMethod == 'Easypaisa' &&
+        data.transactionId is string && data.transactionId.size() >= 4 && data.transactionId.size() <= 64 &&
+        data.hasScreenshot is bool &&
+        data.receiptPath is string && (
+          data.receiptPath == '' ||
+          (
+            data.hasScreenshot == true &&
+            data.receiptPath.size() <= 200 &&
+            data.receiptPath.matches('^order-receipts/' + orderDocId + '/receipt_[0-9]+\\.(jpg|jpeg|png|webp)$')
+          )
+        ) &&
+        data.paymentStatus == 'Payment Pending' &&
+        data.orderStatus == 'Pending' &&
+        data.adminNotes == '' &&
+        data.createdAt == request.time &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidAdminOrderUpdate(newData, oldData) {
+      return newData.diff(oldData).affectedKeys().hasOnly([
+          'paymentStatus',
+          'orderStatus',
+          'adminNotes',
+          'updatedAt'
+        ]) &&
+        newData.keys().hasAll([
+          'paymentStatus',
+          'orderStatus',
+          'adminNotes',
+          'updatedAt'
+        ]) &&
+        newData.paymentStatus in ['Payment Pending', 'Payment Verified', 'Payment Rejected'] &&
+        newData.orderStatus in ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'] &&
+        newData.adminNotes is string && newData.adminNotes.size() <= 1000 &&
+        newData.updatedAt == request.time;
+    }
+
+    // Protected admin allowlist:
+    // - Only a signed-in user can read their own authorization record.
+    // - No public listing or client-side creation/modification/deletion.
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && request.auth.uid == adminUid;
+      allow list, create, update, delete: if false;
+    }
+
+    // Orders collection:
+    // - Unauthenticated customers can CREATE valid orders only.
+    // - Unauthenticated reads, queries, updates, and deletes are denied.
+    // - Only verified admins can read/list orders and update admin-controlled fields.
+    match /orders/{orderDocId} {
+      allow create: if isValidId(orderDocId) && isValidNewOrder(orderDocId, request.resource.data);
+      allow get, list: if isAdmin();
+      allow update: if isAdmin() && isValidId(orderDocId) && isValidAdminOrderUpdate(request.resource.data, resource.data);
+      allow delete: if false;
+    }
+  }
+}
